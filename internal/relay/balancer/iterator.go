@@ -119,6 +119,22 @@ func (it *Iterator) SkipCircuitBreak(channelID, channelKeyID int, channelName st
 	return true
 }
 
+// SkipConcurrencyLimit 记录某维度并发已满导致的跳过
+// tier: "ak"/"ch"/"grp"/"g"
+func (it *Iterator) SkipConcurrencyLimit(channelID, channelKeyID int, channelName, tier string, current, limit int) {
+	it.count++
+	it.attempts = append(it.attempts, model.ChannelAttempt{
+		ChannelID:    channelID,
+		ChannelKeyID: channelKeyID,
+		ChannelName:  channelName,
+		ModelName:    it.candidates[it.index].ModelName,
+		AttemptNum:   it.count,
+		Status:       model.AttemptSkipped,
+		Sticky:       it.IsSticky(),
+		Msg:          fmt.Sprintf("concurrency limit reached (tier=%s, inflight=%d, limit=%d)", tier, current, limit),
+	})
+}
+
 // StartAttempt 开始一次真实转发尝试，返回 Span 用于记录结果
 func (it *Iterator) StartAttempt(channelID, channelKeyID int, channelName string) *AttemptSpan {
 	it.count++

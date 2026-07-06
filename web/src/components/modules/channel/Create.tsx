@@ -7,27 +7,33 @@ import {
 } from '@/components/ui/morphing-dialog';
 import { useCreateChannel, ChannelType, AutoGroupType } from '@/api/endpoints/channel';
 import { useTranslations } from 'next-intl';
+import { toast } from '@/components/common/Toast';
+import { resolveChannelMaxConcurrency } from '@/lib/channel-concurrency';
 import { ChannelForm, type ChannelFormData } from './Form';
+
+const DEFAULT_FORM_DATA: ChannelFormData = {
+    name: '',
+    type: ChannelType.OpenAIChat,
+    base_urls: [{ url: '', delay: 0 }],
+    custom_header: [],
+    channel_proxy: '',
+    param_override: '',
+    keys: [{ enabled: true, channel_key: '', remark: '' }],
+    model: '',
+    custom_model: '',
+    auto_sync: false,
+    auto_group: AutoGroupType.None,
+    enabled: true,
+    proxy: false,
+    match_regex: '',
+    concurrency_mode: 'unlimited',
+    max_concurrency: '',
+};
 
 export function CreateDialogContent() {
     const { setIsOpen } = useMorphingDialog();
     const createChannel = useCreateChannel();
-    const [formData, setFormData] = useState<ChannelFormData>({
-        name: '',
-        type: ChannelType.OpenAIChat,
-        base_urls: [{ url: '', delay: 0 }],
-        custom_header: [],
-        channel_proxy: '',
-        param_override: '',
-        keys: [{ enabled: true, channel_key: '', remark: '' }],
-        model: '',
-        custom_model: '',
-        auto_sync: false,
-        auto_group: AutoGroupType.None,
-        enabled: true,
-        proxy: false,
-        match_regex: '',
-    });
+    const [formData, setFormData] = useState<ChannelFormData>(DEFAULT_FORM_DATA);
     const t = useTranslations('channel.create');
 
     const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
@@ -45,6 +51,15 @@ export function CreateDialogContent() {
 
         const channelProxy = formData.channel_proxy.trim();
         const paramOverride = formData.param_override.trim();
+
+        const resolvedConcurrency = resolveChannelMaxConcurrency(formData.concurrency_mode, formData.max_concurrency);
+        if (!resolvedConcurrency.ok) {
+            toast.error(t('maxConcurrencyValidationTitle'), {
+                description: t(`concurrencyErrors.${resolvedConcurrency.code}`),
+            });
+            return;
+        }
+
         createChannel.mutate(
             {
                 name: formData.name,
@@ -61,25 +76,11 @@ export function CreateDialogContent() {
                 channel_proxy: channelProxy,
                 param_override: paramOverride,
                 match_regex: formData.match_regex.trim(),
+                max_concurrency: resolvedConcurrency.value,
             },
             {
                 onSuccess: () => {
-                    setFormData({
-                        name: '',
-                        type: ChannelType.OpenAIChat,
-                        base_urls: [{ url: '', delay: 0 }],
-                        custom_header: [],
-                        channel_proxy: '',
-                        param_override: '',
-                        keys: [{ enabled: true, channel_key: '', remark: '' }],
-                        model: '',
-                        custom_model: '',
-                        auto_sync: false,
-                        auto_group: AutoGroupType.None,
-                        enabled: true,
-                        proxy: false,
-                        match_regex: '',
-                    });
+                    setFormData(DEFAULT_FORM_DATA);
                     setIsOpen(false);
                 }
             });

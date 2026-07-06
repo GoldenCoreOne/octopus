@@ -14,6 +14,10 @@ import { toast } from '@/components/common/Toast';
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 import { RefreshCw, X, Plus } from 'lucide-react';
+import {
+    type ChannelConcurrencyMode,
+    validateLimitedChannelConcurrencyInput,
+} from '@/lib/channel-concurrency';
 
 export interface ChannelKeyFormItem {
     id?: number;
@@ -40,6 +44,8 @@ export interface ChannelFormData {
     auto_sync: boolean;
     auto_group: AutoGroupType;
     match_regex: string;
+    concurrency_mode: ChannelConcurrencyMode;
+    max_concurrency: string; // limited 模式下的原始输入；unlimited 模式下保持 ''
 }
 
 export interface ChannelFormProps {
@@ -573,6 +579,53 @@ export function ChannelForm({
                                 placeholder={t('paramOverridePlaceholder')}
                                 className="min-h-28 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             />
+                        </div>
+
+                        <div className="space-y-2">
+                            <label htmlFor={`${idPrefix}-concurrency-mode`} className="text-sm font-medium text-card-foreground">
+                                {t('maxConcurrency')}
+                            </label>
+                            <Select
+                                value={formData.concurrency_mode}
+                                onValueChange={(value) => onFormDataChange({
+                                    ...formData,
+                                    concurrency_mode: value as ChannelConcurrencyMode,
+                                    // 切到 unlimited 时清空输入；切到 limited 时保留旧值供编辑
+                                    max_concurrency: value === 'unlimited' ? '' : formData.max_concurrency,
+                                })}
+                            >
+                                <SelectTrigger id={`${idPrefix}-concurrency-mode`} className="rounded-xl w-full border border-border px-4 py-2 text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent className='rounded-xl'>
+                                    <SelectItem className='rounded-xl' value="unlimited">{t('maxConcurrencyModeUnlimited')}</SelectItem>
+                                    <SelectItem className='rounded-xl' value="limited">{t('maxConcurrencyModeLimited')}</SelectItem>
+                                </SelectContent>
+                            </Select>
+                            {formData.concurrency_mode === 'limited' && (() => {
+                                const errorCode = validateLimitedChannelConcurrencyInput(formData.max_concurrency);
+                                return (
+                                    <>
+                                        <label htmlFor={`${idPrefix}-max-concurrency`} className="text-sm font-medium text-card-foreground">
+                                            {t('maxConcurrencyValue')}
+                                        </label>
+                                        <Input
+                                            id={`${idPrefix}-max-concurrency`}
+                                            type="text"
+                                            inputMode="numeric"
+                                            aria-invalid={errorCode ? 'true' : 'false'}
+                                            value={formData.max_concurrency}
+                                            onChange={(e) => onFormDataChange({ ...formData, max_concurrency: e.target.value })}
+                                            placeholder={t('maxConcurrencyPlaceholder')}
+                                            className="rounded-xl"
+                                        />
+                                        {errorCode && (
+                                            <p className="text-xs text-destructive">{t(`concurrencyErrors.${errorCode}`)}</p>
+                                        )}
+                                    </>
+                                );
+                            })()}
+                            <p className="text-xs text-muted-foreground">{t('maxConcurrencyHint')}</p>
                         </div>
                     </AccordionContent>
                 </AccordionItem>

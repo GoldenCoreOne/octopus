@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../client';
 import { logger } from '@/lib/logger';
 import { formatCount, formatMoney, formatTime } from '@/lib/utils';
+import { normalizeChannelMaxConcurrency } from '@/lib/channel-concurrency';
 import { StatsChannel, type StatsMetricsFormatted } from './stats';
 /**
  * 渠道类型枚举
@@ -47,7 +48,7 @@ export type ChannelKey = {
 };
 
 /**
- * 渠道完整数据（与后端 model.Channel 对齐；数组字段在前端保证为 []）
+ * 渠道完整数据（与后端 model.Channel 对齐；数组字段在前端保证为 []，max_concurrency 永远为非负整数）
  */
 export type Channel = {
     id: number;
@@ -65,15 +66,32 @@ export type Channel = {
     param_override?: string | null;
     channel_proxy?: string | null;
     match_regex?: string | null;
+    max_concurrency: number;
     stats: StatsChannel;
 };
 
-// Internal type: backend may return null for slice fields; normalize to [] in select()
-type ChannelServer = Omit<Channel, 'base_urls' | 'custom_header' | 'keys'> & {
+// Internal type: backend may return null for slice fields and max_concurrency; normalize in normalizeChannel()
+type ChannelServer = Omit<Channel, 'base_urls' | 'custom_header' | 'keys' | 'max_concurrency'> & {
     base_urls: BaseUrl[] | null;
     custom_header: CustomHeader[] | null;
     keys: ChannelKey[] | null;
+    max_concurrency: number | null;
 };
+
+/**
+ * 将后端原始 payload 规范化为前端 Channel：
+ * - null/缺失/非有限/非正数的 max_concurrency → 0（不限制），正小数 → 截断为整数
+ * - null/缺失的数组字段 → []
+ */
+export function normalizeChannel(raw: ChannelServer): Channel {
+    return {
+        ...raw,
+        max_concurrency: normalizeChannelMaxConcurrency(raw.max_concurrency),
+        base_urls: raw.base_urls ?? [],
+        custom_header: raw.custom_header ?? [],
+        keys: raw.keys ?? [],
+    };
+}
 
 /**
  * 创建渠道请求：必填字段 + 可选字段
@@ -93,6 +111,7 @@ export type CreateChannelRequest = {
     channel_proxy?: string | null;
     param_override?: string | null;
     match_regex?: string | null;
+    max_concurrency?: number;
 };
 
 /**
@@ -113,6 +132,7 @@ export type UpdateChannelRequest = {
     channel_proxy?: string | null;
     param_override?: string | null;
     match_regex?: string | null;
+    max_concurrency?: number;
     // keys diff
     keys_to_add?: Array<Pick<ChannelKey, 'enabled' | 'channel_key' | 'remark'>>;
     keys_to_update?: Array<{ id: number; enabled?: boolean; channel_key?: string; remark?: string }>;
@@ -147,12 +167,7 @@ export function useChannelList() {
             return apiClient.get<ChannelServer[]>('/api/v1/channel/list');
         },
         select: (data) => data.map((item) => ({
-            raw: ({
-                ...item,
-                base_urls: item.base_urls ?? [],
-                custom_header: item.custom_header ?? [],
-                keys: item.keys ?? [],
-            }) satisfies Channel,
+            raw: normalizeChannel(item),
             formatted: {
                 input_token: formatCount(item.stats.input_token),
                 output_token: formatCount(item.stats.output_token),

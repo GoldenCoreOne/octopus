@@ -26,6 +26,7 @@ export type GroupEditorValues = {
     mode: GroupMode;
     first_token_time_out: number;
     session_keep_time: number;
+    max_concurrency: number;
     members: SelectedMember[];
 };
 
@@ -257,6 +258,7 @@ export function GroupEditor({
     const [mode, setMode] = useState<GroupMode>((initial?.mode ?? 1) as GroupMode);
     const [firstTokenTimeOut, setFirstTokenTimeOut] = useState<number>(initial?.first_token_time_out ?? 0);
     const [sessionKeepTime, setSessionKeepTime] = useState<number>(initial?.session_keep_time ?? 0);
+    const [maxConcurrency, setMaxConcurrency] = useState<number>(initial?.max_concurrency ?? 0);
     const [selectedMembers, setSelectedMembers] = useState<SelectedMember[]>(initial?.members ?? []);
     const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
 
@@ -340,6 +342,7 @@ export function GroupEditor({
             mode,
             first_token_time_out: firstTokenTimeOut,
             session_keep_time: sessionKeepTime,
+            max_concurrency: Math.max(0, Math.floor(maxConcurrency)),
             members: selectedMembers,
         });
     };
@@ -438,6 +441,40 @@ export function GroupEditor({
                                     }
                                     const n = Number.parseInt(raw, 10);
                                     setSessionKeepTime(Number.isFinite(n) && n > 0 ? n : 0);
+                                }}
+                                className="rounded-xl"
+                            />
+                        </Field>
+
+                        <Field>
+                            <FieldLabel htmlFor="group-max-concurrency">
+                                {t('form.maxConcurrency')}
+                                <TooltipProvider>
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <HelpCircle className="size-4 text-muted-foreground cursor-help" />
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                            {t('form.maxConcurrencyHint')}
+                                        </TooltipContent>
+                                    </Tooltip>
+                                </TooltipProvider>
+                            </FieldLabel>
+                            <Input
+                                id="group-max-concurrency"
+                                type="number"
+                                inputMode="numeric"
+                                min={0}
+                                step={1}
+                                value={String(maxConcurrency)}
+                                onChange={(e) => {
+                                    const raw = e.target.value;
+                                    if (raw.trim() === '') {
+                                        setMaxConcurrency(0);
+                                        return;
+                                    }
+                                    const n = Number.parseInt(raw, 10);
+                                    setMaxConcurrency(Number.isFinite(n) && n > 0 ? n : 0);
                                 }}
                                 className="rounded-xl"
                             />

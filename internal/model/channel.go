@@ -32,6 +32,7 @@ type Channel struct {
 	ChannelProxy  *string               `json:"channel_proxy"`
 	Stats         *StatsChannel         `json:"stats,omitempty" gorm:"foreignKey:ChannelID"`
 	MatchRegex    *string               `json:"match_regex"`
+	MaxConcurrency *int                 `json:"max_concurrency"` // nil=未设置, 0=不限制, >0=限制
 }
 
 type BaseUrl struct {
@@ -71,6 +72,7 @@ type ChannelUpdateRequest struct {
 	ChannelProxy  *string                `json:"channel_proxy,omitempty"`
 	ParamOverride *string                `json:"param_override,omitempty"`
 	MatchRegex    *string                `json:"match_regex,omitempty"`
+	MaxConcurrency *int                  `json:"max_concurrency,omitempty"` // nil=不更新, 0=不限制, >0=限制
 
 	KeysToAdd    []ChannelKeyAddRequest    `json:"keys_to_add,omitempty"`
 	KeysToUpdate []ChannelKeyUpdateRequest `json:"keys_to_update,omitempty"`
@@ -122,6 +124,13 @@ func (c *Channel) GetBaseUrl() string {
 }
 
 func (c *Channel) GetChannelKey() ChannelKey {
+	return c.GetChannelKeyExcept(nil)
+}
+
+// GetChannelKeyExcept 选择 TotalCost 最低的可用 key，跳过 excluded 中的 key id。
+// 调用方把熔断中的 key id 放进 excluded，即可让选路继续尝试其他 key，
+// 而不是因为最低 cost 的 key 熔断就放弃整个渠道。
+func (c *Channel) GetChannelKeyExcept(excluded map[int]struct{}) ChannelKey {
 	if c == nil || len(c.Keys) == 0 {
 		return ChannelKey{}
 	}
@@ -135,6 +144,11 @@ func (c *Channel) GetChannelKey() ChannelKey {
 	for _, k := range c.Keys {
 		if !k.Enabled || k.ChannelKey == "" {
 			continue
+		}
+		if excluded != nil {
+			if _, skip := excluded[k.ID]; skip {
+				continue
+			}
 		}
 		if k.StatusCode == 429 && k.LastUseTimeStamp > 0 {
 			if nowSec-k.LastUseTimeStamp < int64(5*time.Minute/time.Second) {

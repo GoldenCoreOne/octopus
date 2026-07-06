@@ -44,6 +44,15 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 	requestModel := internalRequest.Model
 	apiKeyID := c.GetInt("api_key_id")
 
+	// 获取 API key 对象（含 MaxConcurrency）
+	apiKeyObj, _ := op.APIKeyGet(apiKeyID, c.Request.Context())
+
+	// 全局默认并发上限
+	globalLimit := 0
+	if v, err := op.SettingGetInt(dbmodel.SettingKeyRelayConcurrencyDefault); err == nil {
+		globalLimit = v
+	}
+
 	// 获取通道分组
 	group, err := op.GroupGetEnabledMap(requestModel, c.Request.Context())
 	if err != nil {
@@ -98,14 +107,23 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 			continue
 		}
 
-		usedKey := channel.GetChannelKey()
-		if usedKey.ChannelKey == "" {
-			iter.Skip(channel.ID, 0, channel.Name, "no available key")
-			continue
+		// 选 key 时跳过熔断中的 key：否则最低 cost 的 key 熔断后整个渠道会被跳过，
+		// 其他可用 key 没机会被尝试。excluded 收集本轮已熔断的 key id，循环重选。
+		excluded := make(map[int]struct{})
+		var usedKey dbmodel.ChannelKey
+		for {
+			usedKey = channel.GetChannelKeyExcept(excluded)
+			if usedKey.ChannelKey == "" {
+				iter.Skip(channel.ID, 0, channel.Name, "no available key")
+				break
+			}
+			if iter.SkipCircuitBreak(channel.ID, usedKey.ID, channel.Name) {
+				excluded[usedKey.ID] = struct{}{}
+				continue
+			}
+			break
 		}
-
-		// 熔断检查
-		if iter.SkipCircuitBreak(channel.ID, usedKey.ID, channel.Name) {
+		if usedKey.ChannelKey == "" {
 			continue
 		}
 
@@ -133,6 +151,29 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 			requestModel, group.Mode, channel.Name, item.ModelName,
 			iter.Index()+1, iter.Len(), iter.IsSticky())
 
+		// 4 层并发占用：apikey / channel / group / global
+		// 每个维度 limit > 0 才占用，nil / 0 = 该层不限制
+		slots := make([]slotSpec, 0, 4)
+		if apiKeyObj.MaxConcurrency != nil && *apiKeyObj.MaxConcurrency > 0 {
+			slots = append(slots, apiKeySlot(apiKeyID, *apiKeyObj.MaxConcurrency))
+		}
+		if channel.MaxConcurrency != nil && *channel.MaxConcurrency > 0 {
+			slots = append(slots, channelSlot(channel.ID, *channel.MaxConcurrency))
+		}
+		if group.MaxConcurrency != nil && *group.MaxConcurrency > 0 {
+			slots = append(slots, groupSlot(group.ID, *group.MaxConcurrency))
+		}
+		if globalLimit > 0 {
+			slots = append(slots, globalSlot(globalLimit))
+		}
+
+		release, acquired, blockedTier, blockedCurrent, blockedLimit := acquireRequest(slots)
+		if !acquired {
+			iter.SkipConcurrencyLimit(channel.ID, usedKey.ID, channel.Name, string(blockedTier), blockedCurrent, blockedLimit)
+			lastErr = fmt.Errorf("concurrency limit reached (tier=%s, inflight=%d, limit=%d)", blockedTier, blockedCurrent, blockedLimit)
+			continue
+		}
+
 		// 构造尝试级上下文 -- 只写变化的 4 个字段
 		ra := &relayAttempt{
 			relayRequest:         req,
@@ -143,6 +184,7 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 		}
 
 		result := ra.attempt()
+		release()
 		if result.Success {
 			metrics.Save(c.Request.Context(), true, nil, iter.Attempts())
 			return
@@ -195,6 +237,7 @@ func (ra *relayAttempt) attempt() attemptResult {
 	}
 
 	// ====== 失败 ======
+	ra.usedKey.TotalCost += 1
 	op.ChannelKeyUpdate(ra.usedKey)
 	span.End(dbmodel.AttemptFailed, statusCode, fwdErr.Error())
 

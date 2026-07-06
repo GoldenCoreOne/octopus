@@ -89,9 +89,15 @@ function APIKeyForm({ apiKey, isPending, submitLabel, onSubmit, onClose }: APIKe
         expire_at: apiKey?.expire_at,
         max_cost: apiKey?.max_cost,
         supported_models: apiKey?.supported_models,
+        max_concurrency: apiKey?.max_concurrency ?? null,
     }));
     const [maxCostInput, setMaxCostInput] = useState(() =>
         apiKey?.max_cost != null ? String(apiKey.max_cost) : ''
+    );
+    const [maxConcurrencyInput, setMaxConcurrencyInput] = useState(() =>
+        apiKey?.max_concurrency != null && apiKey.max_concurrency > 0
+            ? String(apiKey.max_concurrency)
+            : ''
     );
     const [expireTime, setExpireTime] = useState(() => {
         if (apiKey?.expire_at) {
@@ -112,6 +118,7 @@ function APIKeyForm({ apiKey, isPending, submitLabel, onSubmit, onClose }: APIKe
     const expireDate = parseExpireDate(form.expire_at);
     const neverExpire = !form.expire_at;
     const isUnlimitedCost = maxCostInput.trim() === '';
+    const isUnlimitedConcurrency = maxConcurrencyInput.trim() === '';
 
     const expireLabel = neverExpire
         ? t('apiKey.form.neverExpire')
@@ -158,6 +165,22 @@ function APIKeyForm({ apiKey, isPending, submitLabel, onSubmit, onClose }: APIKe
     const handleClearMaxCost = useCallback(() => {
         setMaxCostInput('');
         updateForm({ max_cost: undefined });
+    }, [updateForm]);
+
+    const handleMaxConcurrencyChange = useCallback((val: string) => {
+        const cleaned = val.replace(/[^\d]/g, '');
+        setMaxConcurrencyInput(cleaned);
+        if (cleaned === '') {
+            updateForm({ max_concurrency: null });
+            return;
+        }
+        const n = Math.max(0, Math.floor(Number(cleaned)));
+        updateForm({ max_concurrency: Number.isFinite(n) && n > 0 ? n : null });
+    }, [updateForm]);
+
+    const handleClearMaxConcurrency = useCallback(() => {
+        setMaxConcurrencyInput('');
+        updateForm({ max_concurrency: null });
     }, [updateForm]);
 
     const handleSubmit = useCallback((e: React.FormEvent) => {
@@ -211,6 +234,37 @@ function APIKeyForm({ apiKey, isPending, submitLabel, onSubmit, onClose }: APIKe
                         {t('apiKey.form.unlimited')}
                     </button>
                 </div>
+            </div>
+
+            <div className="grid gap-1 text-xs text-muted-foreground">
+                {t('apiKey.form.maxConcurrency')}
+                <div className="flex items-center gap-2">
+                    <Input
+                        type="text"
+                        inputMode="numeric"
+                        placeholder={t('apiKey.form.maxConcurrencyPlaceholder')}
+                        value={maxConcurrencyInput}
+                        onChange={(e) => handleMaxConcurrencyChange(e.target.value)}
+                        className="h-9 text-sm rounded-xl"
+                        disabled={isPending}
+                    />
+                    <button
+                        type="button"
+                        onClick={handleClearMaxConcurrency}
+                        disabled={isPending}
+                        aria-pressed={isUnlimitedConcurrency}
+                        className={cn(
+                            'h-9 px-3 rounded-xl border text-sm transition-colors shrink-0',
+                            isUnlimitedConcurrency
+                                ? 'bg-primary text-primary-foreground border-primary/30'
+                                : 'border-border bg-muted/20 text-foreground hover:bg-muted/30',
+                            isPending && 'opacity-50 cursor-not-allowed'
+                        )}
+                    >
+                        {t('apiKey.form.unlimited')}
+                    </button>
+                </div>
+                <div className="text-[11px] text-muted-foreground/80">{t('apiKey.form.maxConcurrencyHint')}</div>
             </div>
 
             <div className="grid gap-1 text-xs text-muted-foreground">

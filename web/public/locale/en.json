@@ -222,6 +222,9 @@
                 "supportedModels": "Supported Models",
                 "noModels": "No models available",
                 "modelsHint": "Leave empty for unlimited",
+                "maxConcurrency": "Concurrency Limit",
+                "maxConcurrencyPlaceholder": "Leave empty for unlimited",
+                "maxConcurrencyHint": "0 or empty = unlimited; >0 = max concurrent requests for this API key",
                 "enabled": "Enabled",
                 "cancel": "Cancel",
                 "create": "Create",
@@ -375,6 +378,8 @@
             "firstTokenTimeOutHint": "Unit: seconds, only effective for streaming response, 0 = no limit",
             "sessionKeepTime": "Session Keep Time",
             "sessionKeepTimeHint": "Unit: seconds, keeps using the same channel within a session, 0 = disabled",
+            "maxConcurrency": "Concurrency Limit",
+            "maxConcurrencyHint": "0 or empty = unlimited; >0 = max concurrent requests for this group",
             "items": "Selected Models",
             "addItem": "Add Model",
             "autoAdd": "Auto Add",
@@ -491,12 +496,37 @@
                 "delete": "Delete",
                 "confirmDelete": "Confirm Delete",
                 "deleting": "Deleting..."
+            },
+            "maxConcurrencyValidationTitle": "Invalid Concurrency Limit",
+            "concurrencyErrors": {
+                "required": "Please enter a concurrency limit",
+                "positive_integer": "Concurrency limit must be a positive integer"
+            },
+            "concurrency": {
+                "title": "Concurrency Limit",
+                "limitedValue": "Limited {count}",
+                "limitedDescription": "This channel caps in-flight requests at {count}",
+                "limitedBadge": "Limited",
+                "unlimited": "Unlimited",
+                "unlimitedDescription": "No per-channel cap; falls back to the next tier (group / global)",
+                "unlimitedBadge": "Unlimited",
+                "scopeLabel": "Scope",
+                "scopeValue": "Single channel",
+                "instanceLabel": "Counter",
+                "instanceValue": "In-flight requests",
+                "behaviorLabel": "On Exceed",
+                "behaviorValue": "Queue and wait"
             }
         },
         "create": {
             "dialogTitle": "Create New Channel",
             "submit": "Create Channel",
-            "submitting": "Creating..."
+            "submitting": "Creating...",
+            "maxConcurrencyValidationTitle": "Invalid Concurrency Limit",
+            "concurrencyErrors": {
+                "required": "Please enter a concurrency limit",
+                "positive_integer": "Concurrency limit must be a positive integer"
+            }
         },
         "form": {
             "add": "Add",
@@ -541,7 +571,18 @@
             "autoGroupRegex": "Regex",
             "matchRegex": "Match Regex",
             "matchRegexPlaceholder": "Optional: regex pattern to match request model names",
-            "remark": "Remark"
+            "remark": "Remark",
+            "maxConcurrency": "Concurrency Limit",
+            "maxConcurrencyPlaceholder": "Leave empty for unlimited",
+            "maxConcurrencyHint": "0 or empty = unlimited; >0 = max concurrent requests for this channel",
+            "maxConcurrencyInvalid": "Concurrency limit must be an integer >= 0",
+            "maxConcurrencyValue": "Value",
+            "maxConcurrencyModeUnlimited": "Unlimited",
+            "maxConcurrencyModeLimited": "Limited",
+            "concurrencyErrors": {
+                "required": "Please enter a concurrency limit",
+                "positive_integer": "Concurrency limit must be a positive integer"
+            }
         }
     }
 }

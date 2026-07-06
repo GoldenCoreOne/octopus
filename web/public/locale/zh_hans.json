@@ -222,6 +222,9 @@
                 "supportedModels": "支持的模型",
                 "noModels": "暂无可选模型",
                 "modelsHint": "不选择则为无限制",
+                "maxConcurrency": "并发限制",
+                "maxConcurrencyPlaceholder": "留空表示不限制",
+                "maxConcurrencyHint": "0 或留空表示不限制；>0 表示该 API Key 最大并发请求数",
                 "enabled": "是否启用",
                 "cancel": "取消",
                 "create": "创建",
@@ -375,6 +378,8 @@
             "firstTokenTimeOutHint": "单位秒，仅流式响应起效，0 表示不限制",
             "sessionKeepTime": "会话保持",
             "sessionKeepTimeHint": "单位秒，会话期间保持使用同一渠道，0 表示禁用",
+            "maxConcurrency": "并发限制",
+            "maxConcurrencyHint": "0 或留空表示不限制；>0 表示该分组最大并发请求数",
             "items": "已选模型",
             "addItem": "添加模型",
             "autoAdd": "自动添加",
@@ -491,12 +496,37 @@
                 "delete": "删除",
                 "confirmDelete": "确认删除",
                 "deleting": "删除中..."
+            },
+            "maxConcurrencyValidationTitle": "并发限制无效",
+            "concurrencyErrors": {
+                "required": "请输入并发限制值",
+                "positive_integer": "并发限制必须为正整数"
+            },
+            "concurrency": {
+                "title": "并发限制",
+                "limitedValue": "限制 {count}",
+                "limitedDescription": "当前渠道同时进行中的请求上限为 {count}",
+                "limitedBadge": "受限",
+                "unlimited": "不限制",
+                "unlimitedDescription": "该渠道不设并发上限，退化为下一层（分组/全局）限制",
+                "unlimitedBadge": "无限",
+                "scopeLabel": "作用域",
+                "scopeValue": "单个渠道",
+                "instanceLabel": "计数对象",
+                "instanceValue": "进行中的请求",
+                "behaviorLabel": "阻塞行为",
+                "behaviorValue": "超出时排队等待"
             }
         },
         "create": {
             "dialogTitle": "创建新渠道",
             "submit": "创建渠道",
-            "submitting": "创建中..."
+            "submitting": "创建中...",
+            "maxConcurrencyValidationTitle": "并发限制无效",
+            "concurrencyErrors": {
+                "required": "请输入并发限制值",
+                "positive_integer": "并发限制必须为正整数"
+            }
         },
         "form": {
             "add": "添加",
@@ -541,7 +571,18 @@
             "autoGroupRegex": "正则匹配",
             "matchRegex": "匹配正则",
             "matchRegexPlaceholder": "可选：用于匹配请求模型名称的正则表达式",
-            "remark": "备注"
+            "remark": "备注",
+            "maxConcurrency": "并发限制",
+            "maxConcurrencyPlaceholder": "留空表示不限制",
+            "maxConcurrencyHint": "0 或留空表示不限制；>0 表示该渠道最大并发请求数",
+            "maxConcurrencyInvalid": "并发限制必须为大于或等于 0 的整数",
+            "maxConcurrencyValue": "并发数",
+            "maxConcurrencyModeUnlimited": "不限制",
+            "maxConcurrencyModeLimited": "限制",
+            "concurrencyErrors": {
+                "required": "请输入并发限制值",
+                "positive_integer": "并发限制必须为正整数"
+            }
         }
     }
 }

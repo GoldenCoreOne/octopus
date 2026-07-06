@@ -177,6 +177,14 @@ func ChannelUpdate(req *model.ChannelUpdateRequest, ctx context.Context) (*model
 		selectFields = append(selectFields, "match_regex")
 		updates.MatchRegex = req.MatchRegex
 	}
+	if req.MaxConcurrency != nil {
+		if *req.MaxConcurrency < 0 {
+			tx.Rollback()
+			return nil, fmt.Errorf("max_concurrency must be >= 0")
+		}
+		selectFields = append(selectFields, "max_concurrency")
+		updates.MaxConcurrency = req.MaxConcurrency
+	}
 
 	// 只有当有字段需要更新时才执行 UPDATE
 	if len(selectFields) > 0 {

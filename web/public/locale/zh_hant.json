@@ -222,6 +222,9 @@
                 "supportedModels": "支援的模型",
                 "noModels": "暫無可選模型",
                 "modelsHint": "不選擇則為無限制",
+                "maxConcurrency": "並發限制",
+                "maxConcurrencyPlaceholder": "留空表示不限制",
+                "maxConcurrencyHint": "0 或留空表示不限制；>0 表示該 API Key 最大並發請求數",
                 "enabled": "是否啟用",
                 "cancel": "取消",
                 "create": "建立",
@@ -375,6 +378,8 @@
             "firstTokenTimeOutHint": "單位秒，僅串流響應起效，0 表示不限制",
             "sessionKeepTime": "會話保持",
             "sessionKeepTimeHint": "單位秒，會話期間保持使用同一供應源，0 表示停用",
+            "maxConcurrency": "並發限制",
+            "maxConcurrencyHint": "0 或留空表示不限制；>0 表示該分組最大並發請求數",
             "items": "已選模型",
             "addItem": "新增模型",
             "autoAdd": "自動新增",
@@ -491,12 +496,37 @@
                 "delete": "刪除",
                 "confirmDelete": "確認刪除",
                 "deleting": "刪除中..."
+            },
+            "maxConcurrencyValidationTitle": "並發限制無效",
+            "concurrencyErrors": {
+                "required": "請輸入並發限制值",
+                "positive_integer": "並發限制必須為正整數"
+            },
+            "concurrency": {
+                "title": "並發限制",
+                "limitedValue": "限制 {count}",
+                "limitedDescription": "目前供應源同時進行中的請求上限為 {count}",
+                "limitedBadge": "受限",
+                "unlimited": "不限制",
+                "unlimitedDescription": "該供應源不設並發上限，退化為下一層（分組/全域）限制",
+                "unlimitedBadge": "無限",
+                "scopeLabel": "作用域",
+                "scopeValue": "單一供應源",
+                "instanceLabel": "計數對象",
+                "instanceValue": "進行中的請求",
+                "behaviorLabel": "阻塞行為",
+                "behaviorValue": "超出時排隊等待"
             }
         },
         "create": {
             "dialogTitle": "建立新供應源",
             "submit": "建立供應源",
-            "submitting": "建立中..."
+            "submitting": "建立中...",
+            "maxConcurrencyValidationTitle": "並發限制無效",
+            "concurrencyErrors": {
+                "required": "請輸入並發限制值",
+                "positive_integer": "並發限制必須為正整數"
+            }
         },
         "form": {
             "add": "新增",
@@ -541,7 +571,18 @@
             "autoGroupRegex": "正規比對",
             "matchRegex": "匹配正規",
             "matchRegexPlaceholder": "可選：用於匹配請求模型名稱的正規表示式",
-            "remark": "備註"
+            "remark": "備註",
+            "maxConcurrency": "並發限制",
+            "maxConcurrencyPlaceholder": "留空表示不限制",
+            "maxConcurrencyHint": "0 或留空表示不限制；>0 表示該渠道最大並發請求數",
+            "maxConcurrencyInvalid": "並發限制必須為大於或等於 0 的整數",
+            "maxConcurrencyValue": "並發數",
+            "maxConcurrencyModeUnlimited": "不限制",
+            "maxConcurrencyModeLimited": "限制",
+            "concurrencyErrors": {
+                "required": "請輸入並發限制值",
+                "positive_integer": "並發限制必須為正整數"
+            }
         }
     }
 }

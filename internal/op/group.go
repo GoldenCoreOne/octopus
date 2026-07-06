@@ -106,6 +106,14 @@ func GroupUpdate(req *model.GroupUpdateRequest, ctx context.Context) (*model.Gro
 		selectFields = append(selectFields, "session_keep_time")
 		updates.SessionKeepTime = *req.SessionKeepTime
 	}
+	if req.MaxConcurrency != nil {
+		if *req.MaxConcurrency < 0 {
+			tx.Rollback()
+			return nil, fmt.Errorf("max_concurrency must be >= 0")
+		}
+		selectFields = append(selectFields, "max_concurrency")
+		updates.MaxConcurrency = req.MaxConcurrency
+	}
 
 	if len(selectFields) > 0 {
 		if err := tx.Model(&model.Group{}).Where("id = ?", req.ID).Select(selectFields).Updates(&updates).Error; err != nil {

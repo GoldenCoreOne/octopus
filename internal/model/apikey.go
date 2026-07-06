@@ -8,4 +8,5 @@ type APIKey struct {
 	ExpireAt        int64   `json:"expire_at,omitempty"`
 	MaxCost         float64 `json:"max_cost,omitempty"`
 	SupportedModels string  `json:"supported_models,omitempty"`
+	MaxConcurrency  *int    `json:"max_concurrency"` // nil=未设置, 0=不限制, >0=限制
 }

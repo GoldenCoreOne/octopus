@@ -26,6 +26,8 @@ import { ChannelForm, type ChannelFormData } from './Form';
 import { formatMoney } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { toast } from '@/components/common/Toast';
+import { getChannelConcurrencyMode, resolveChannelMaxConcurrency } from '@/lib/channel-concurrency';
 
 export function CardContent({ channel, stats }: { channel: Channel; stats: StatsMetricsFormatted }) {
     const { setIsOpen } = useMorphingDialog();
@@ -58,6 +60,8 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
         auto_sync: channel.auto_sync,
         auto_group: channel.auto_group,
         match_regex: channel.match_regex ?? '',
+        concurrency_mode: getChannelConcurrencyMode(channel.max_concurrency),
+        max_concurrency: channel.max_concurrency > 0 ? String(channel.max_concurrency) : '',
     });
     const t = useTranslations('channel.detail');
 
@@ -113,6 +117,19 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
         if (nextMatchRegex !== curMatchRegex) {
             // Empty string means "clear" for patch semantics; backend maps it to NULL.
             req.match_regex = nextMatchRegex;
+        }
+
+        // 并发限制：unlimited → 0(不限制), limited + 正整数 → N。仅在解析失败时阻止提交。
+        const resolvedConcurrency = resolveChannelMaxConcurrency(formData.concurrency_mode, formData.max_concurrency);
+        if (!resolvedConcurrency.ok) {
+            toast.error(t('maxConcurrencyValidationTitle'), {
+                description: t(`concurrencyErrors.${resolvedConcurrency.code}`),
+            });
+            return;
+        }
+        const curMaxConcurrency = channel.max_concurrency ?? 0;
+        if (resolvedConcurrency.value !== curMaxConcurrency) {
+            req.max_concurrency = resolvedConcurrency.value;
         }
 
         const originalKeys = channel.keys;
@@ -419,6 +436,47 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
                                         <span className="text-sm font-normal ml-1 text-muted-foreground">{stats.wait_time.formatted.unit}</span>
                                     </dd>
                                 </dl>
+
+                                {/* 并发限制 */}
+                                <section className="space-y-3">
+                                    <h4 className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                                        <Activity className="size-3.5" />
+                                        {t('concurrency.title')}
+                                    </h4>
+                                    <div className="rounded-2xl border bg-card p-3 sm:p-4 space-y-2">
+                                        {channel.max_concurrency > 0 ? (
+                                            <>
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-sm text-muted-foreground">{t('concurrency.limitedValue', { count: channel.max_concurrency })}</span>
+                                                    <Badge variant="secondary" className="h-5 px-1.5 text-xs">{t('concurrency.limitedBadge')}</Badge>
+                                                </div>
+                                                <p className="text-xs text-muted-foreground">{t('concurrency.limitedDescription', { count: channel.max_concurrency })}</p>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-sm text-muted-foreground">{t('concurrency.unlimited')}</span>
+                                                    <Badge variant="secondary" className="h-5 px-1.5 text-xs">{t('concurrency.unlimitedBadge')}</Badge>
+                                                </div>
+                                                <p className="text-xs text-muted-foreground">{t('concurrency.unlimitedDescription')}</p>
+                                            </>
+                                        )}
+                                        <dl className="grid gap-2 grid-cols-1 sm:grid-cols-3 pt-2 border-t">
+                                            <div>
+                                                <dt className="text-xs text-muted-foreground">{t('concurrency.scopeLabel')}</dt>
+                                                <dd className="text-sm font-medium text-card-foreground">{t('concurrency.scopeValue')}</dd>
+                                            </div>
+                                            <div>
+                                                <dt className="text-xs text-muted-foreground">{t('concurrency.instanceLabel')}</dt>
+                                                <dd className="text-sm font-medium text-card-foreground">{t('concurrency.instanceValue')}</dd>
+                                            </div>
+                                            <div>
+                                                <dt className="text-xs text-muted-foreground">{t('concurrency.behaviorLabel')}</dt>
+                                                <dd className="text-sm font-medium text-card-foreground">{t('concurrency.behaviorValue')}</dd>
+                                            </div>
+                                        </dl>
+                                    </div>
+                                </section>
                             </div>
 
                             {/* 操作按钮 */}
