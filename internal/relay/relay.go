@@ -247,8 +247,12 @@ func (ra *relayAttempt) attempt() attemptResult {
 		RequestFailed: 1,
 	})
 
-	// 熔断器：记录失败
-	balancer.RecordFailure(ra.channel.ID, ra.usedKey.ID, ra.internalRequest.Model)
+	// 熔断器：记录失败（503且开启了重试时不记录，避免重试被熔断器提前掐断）
+	// 与 forward() 重试决策保持一致：复用 shouldRetry503 的 matched 判定。
+	_, _, matchedRetry503 := shouldRetry503(statusCode, retryOn503Enabled(ra.channel), false, 0, 0)
+	if !matchedRetry503 {
+		balancer.RecordFailure(ra.channel.ID, ra.usedKey.ID, ra.internalRequest.Model)
+	}
 
 	ra.metrics.ParamOverride = paramOverrideValue(ra.channel.ParamOverride)
 
@@ -289,7 +293,7 @@ func parseRequest(inboundType inbound.InboundType, c *gin.Context) (*model.Inter
 	return internalRequest, inAdapter, nil
 }
 
-// forward 转发请求到上游服务
+// forward 转发请求到上游服务（支持 503 自动重试）
 func (ra *relayAttempt) forward() (int, error) {
 	ctx := ra.c.Request.Context()
 
@@ -305,12 +309,16 @@ func (ra *relayAttempt) forward() (int, error) {
 		return 0, fmt.Errorf("failed to create request: %w", err)
 	}
 
+	// 预先缓存 body 字节，供 503 重试时重建 io.Reader
+	var bodyBytes []byte
+
 	// 应用 ParamOverride 到请求体
 	if ra.channel.ParamOverride != nil && *ra.channel.ParamOverride != "" {
 		body, err := io.ReadAll(outboundRequest.Body)
 		if err != nil {
 			return 0, fmt.Errorf("failed to read body: %w", err)
 		}
+		bodyBytes = body
 
 		var bodyMap map[string]any
 		if err := json.Unmarshal(body, &bodyMap); err != nil {
@@ -331,40 +339,83 @@ func (ra *relayAttempt) forward() (int, error) {
 			outboundRequest.Body = io.NopCloser(bytes.NewBuffer(body))
 			return 0, nil
 		}
+		bodyBytes = modifiedBody
 		outboundRequest.Body = io.NopCloser(bytes.NewBuffer(modifiedBody))
 		outboundRequest.ContentLength = int64(len(modifiedBody))
+	} else {
+		// 没有 ParamOverride，直接从 Body 读取缓存
+		bodyBytes, err = io.ReadAll(outboundRequest.Body)
+		if err != nil {
+			return 0, fmt.Errorf("failed to read body for retry cache: %w", err)
+		}
+		outboundRequest.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 	}
 
 	// 复制请求头
 	ra.copyHeaders(outboundRequest)
 
-	// 发送请求
-	response, err := ra.sendRequest(outboundRequest)
-	if err != nil {
-		return 0, fmt.Errorf("failed to send request: %w", err)
+	// 503 重试相关：是否启用
+	retryEnabled := retryOn503Enabled(ra.channel)
+	maxRetries := resolveMax503Retries(ra.channel.Max503Retries)
+
+	var lastResp *http.Response
+	retries := 0
+	for {
+		// 每次迭代前重建 body（bodyBytes 不变）
+		outboundRequest.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
+		// 发送请求
+		response, err := ra.sendRequest(outboundRequest)
+		if err != nil {
+			return 0, fmt.Errorf("failed to send request: %w", err)
+		}
+
+		// 503 重试决策（纯函数，集中分支逻辑便于测试）
+		retry, exhaust, _ := shouldRetry503(response.StatusCode, retryEnabled, ra.c.Writer.Written(), maxRetries, retries)
+		if retry || exhaust {
+			if exhaust {
+				// 达到上限：把最后一次 503 响应交给下游既有错误分支返回给客户端。
+				// 此时才读 body 用于错误信息；retry 分支不读，直接 Close。
+				lastResp = response
+				break
+			}
+			// 抢占式 0 秒重试：直接 Close 丢弃响应体，不 drain。
+			// 原因：503 body 对客户端无用，读完会阻塞到上游发完 EOF，违背"0 秒抢占式"。
+			// 未 drain 的连接 Go transport 会标记不可复用并新建连接——重试新建
+			// TCP/TLS 的开销远小于读完一个可能很大的 503 body。
+			response.Body.Close()
+			retries++
+			log.Infof("503 retry #%d for channel %d", retries, ra.channel.ID)
+			continue
+		}
+
+		// 非 503（含 200、4xx、5xx 等）：交给后续既有分支处理
+		lastResp = response
+		break
 	}
-	defer response.Body.Close()
+
+	defer lastResp.Body.Close()
 
 	// 检查响应状态
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		body, err := io.ReadAll(response.Body)
+	if lastResp.StatusCode < 200 || lastResp.StatusCode >= 300 {
+		body, err := io.ReadAll(lastResp.Body)
 		if err != nil {
 			return 0, fmt.Errorf("failed to read response body: %w", err)
 		}
-		return 0, fmt.Errorf("upstream error: %d: %s", response.StatusCode, string(body))
+		return lastResp.StatusCode, fmt.Errorf("upstream error: %d: %s", lastResp.StatusCode, string(body))
 	}
 
 	// 处理响应
 	if ra.internalRequest.Stream != nil && *ra.internalRequest.Stream {
-		if err := ra.handleStreamResponse(ctx, response); err != nil {
+		if err := ra.handleStreamResponse(ctx, lastResp); err != nil {
 			return 0, err
 		}
-		return response.StatusCode, nil
+		return lastResp.StatusCode, nil
 	}
-	if err := ra.handleResponse(ctx, response); err != nil {
+	if err := ra.handleResponse(ctx, lastResp); err != nil {
 		return 0, err
 	}
-	return response.StatusCode, nil
+	return lastResp.StatusCode, nil
 }
 
 // copyHeaders 复制请求头，过滤 hop-by-hop 头

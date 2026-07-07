@@ -185,6 +185,22 @@ func ChannelUpdate(req *model.ChannelUpdateRequest, ctx context.Context) (*model
 		selectFields = append(selectFields, "max_concurrency")
 		updates.MaxConcurrency = req.MaxConcurrency
 	}
+	if req.RetryOn503 != nil {
+		if *req.RetryOn503 != 0 && *req.RetryOn503 != 1 {
+			tx.Rollback()
+			return nil, fmt.Errorf("retry_on_503 must be 0 or 1")
+		}
+		selectFields = append(selectFields, "retry_on_503")
+		updates.RetryOn503 = req.RetryOn503
+	}
+	if req.Max503Retries != nil {
+		if *req.Max503Retries < 0 {
+			tx.Rollback()
+			return nil, fmt.Errorf("max_503_retries must be >= 0")
+		}
+		selectFields = append(selectFields, "max_503_retries")
+		updates.Max503Retries = req.Max503Retries
+	}
 
 	// 只有当有字段需要更新时才执行 UPDATE
 	if len(selectFields) > 0 {

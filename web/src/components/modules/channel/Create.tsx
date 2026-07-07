@@ -9,6 +9,7 @@ import { useCreateChannel, ChannelType, AutoGroupType } from '@/api/endpoints/ch
 import { useTranslations } from 'next-intl';
 import { toast } from '@/components/common/Toast';
 import { resolveChannelMaxConcurrency } from '@/lib/channel-concurrency';
+import { resolveChannelMax503Retries, resolveChannelRetryOn503 } from '@/lib/channel-retry-503';
 import { ChannelForm, type ChannelFormData } from './Form';
 
 const DEFAULT_FORM_DATA: ChannelFormData = {
@@ -28,6 +29,8 @@ const DEFAULT_FORM_DATA: ChannelFormData = {
     match_regex: '',
     concurrency_mode: 'unlimited',
     max_concurrency: '',
+    retry_on_503: false,
+    max_503_retries: '',
 };
 
 export function CreateDialogContent() {
@@ -60,6 +63,14 @@ export function CreateDialogContent() {
             return;
         }
 
+        const resolvedMax503 = resolveChannelMax503Retries(formData.retry_on_503, formData.max_503_retries);
+        if (!resolvedMax503.ok) {
+            toast.error(t('max503RetriesValidationTitle'), {
+                description: t(`retryErrors.${resolvedMax503.code}`),
+            });
+            return;
+        }
+
         createChannel.mutate(
             {
                 name: formData.name,
@@ -77,6 +88,8 @@ export function CreateDialogContent() {
                 param_override: paramOverride,
                 match_regex: formData.match_regex.trim(),
                 max_concurrency: resolvedConcurrency.value,
+                retry_on_503: resolveChannelRetryOn503(formData.retry_on_503),
+                ...(resolvedMax503.value !== undefined ? { max_503_retries: resolvedMax503.value } : {}),
             },
             {
                 onSuccess: () => {

@@ -516,6 +516,22 @@
                 "instanceValue": "In-flight requests",
                 "behaviorLabel": "On Exceed",
                 "behaviorValue": "Queue and wait"
+            },
+            "retry503": {
+                "title": "503 Auto Retry",
+                "enabled": "Enabled",
+                "enabledBadge": "On",
+                "limitedDescription": "Retries up to {count} time(s) before surfacing 503",
+                "unlimitedDescription": "Infinite retries until a non-503 response or request timeout",
+                "disabled": "Disabled",
+                "disabledBadge": "Off",
+                "disabledDescription": "Upstream 503 returned to client immediately",
+                "scopeLabel": "Scope",
+                "scopeValue": "Single channel",
+                "strategyLabel": "Strategy",
+                "strategyValue": "Preemptive, zero delay",
+                "circuitLabel": "Circuit Breaker",
+                "circuitValue": "Skipped during retry"
             }
         },
         "create": {
@@ -526,6 +542,11 @@
             "concurrencyErrors": {
                 "required": "Please enter a concurrency limit",
                 "positive_integer": "Concurrency limit must be a positive integer"
+            },
+            "max503RetriesValidationTitle": "Invalid 503 Retry Count",
+            "retryErrors": {
+                "required": "Please enter a retry count",
+                "non_negative_integer": "Retry count must be a non-negative integer"
             }
         },
         "form": {
@@ -582,6 +603,15 @@
             "concurrencyErrors": {
                 "required": "Please enter a concurrency limit",
                 "positive_integer": "Concurrency limit must be a positive integer"
+            },
+            "retryOn503": "503 Auto Retry",
+            "retryOn503Hint": "Transparently retry on upstream HTTP 503",
+            "max503RetriesValue": "Max Retries",
+            "max503RetriesPlaceholder": "0 = infinite; empty = default 12",
+            "max503RetriesHint": "0 = infinite; empty = default 12; >0 = custom retry cap",
+            "retryErrors": {
+                "required": "Please enter a retry count",
+                "non_negative_integer": "Retry count must be a non-negative integer"
             }
         }
     }

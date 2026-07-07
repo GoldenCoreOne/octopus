@@ -32,7 +32,9 @@ type Channel struct {
 	ChannelProxy  *string               `json:"channel_proxy"`
 	Stats         *StatsChannel         `json:"stats,omitempty" gorm:"foreignKey:ChannelID"`
 	MatchRegex    *string               `json:"match_regex"`
-	MaxConcurrency *int                 `json:"max_concurrency"` // nil=未设置, 0=不限制, >0=限制
+	MaxConcurrency *int                 `json:"max_concurrency"`                                           // nil=未设置, 0=不限制, >0=限制
+	RetryOn503    *int                 `json:"retry_on_503" gorm:"column:retry_on_503"`                    // nil=未设置, 0=关闭, 1=开启
+	Max503Retries *int                 `json:"max_503_retries" gorm:"column:max_503_retries"`              // nil=未设置(默认12), 0=无限, >0=自定义上限
 }
 
 type BaseUrl struct {
@@ -73,6 +75,8 @@ type ChannelUpdateRequest struct {
 	ParamOverride *string                `json:"param_override,omitempty"`
 	MatchRegex    *string                `json:"match_regex,omitempty"`
 	MaxConcurrency *int                  `json:"max_concurrency,omitempty"` // nil=不更新, 0=不限制, >0=限制
+	RetryOn503    *int                  `json:"retry_on_503,omitempty"`    // nil=不更新, 0=关闭, 1=开启
+	Max503Retries *int                  `json:"max_503_retries,omitempty"` // nil=不更新, 0=无限, >0=自定义上限
 
 	KeysToAdd    []ChannelKeyAddRequest    `json:"keys_to_add,omitempty"`
 	KeysToUpdate []ChannelKeyUpdateRequest `json:"keys_to_update,omitempty"`

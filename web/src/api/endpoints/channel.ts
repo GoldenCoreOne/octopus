@@ -3,6 +3,7 @@ import { apiClient } from '../client';
 import { logger } from '@/lib/logger';
 import { formatCount, formatMoney, formatTime } from '@/lib/utils';
 import { normalizeChannelMaxConcurrency } from '@/lib/channel-concurrency';
+import { normalizeChannelMax503Retries } from '@/lib/channel-retry-503';
 import { StatsChannel, type StatsMetricsFormatted } from './stats';
 /**
  * 渠道类型枚举
@@ -67,15 +68,19 @@ export type Channel = {
     channel_proxy?: string | null;
     match_regex?: string | null;
     max_concurrency: number;
+    retry_on_503: number;
+    max_503_retries: number;
     stats: StatsChannel;
 };
 
 // Internal type: backend may return null for slice fields and max_concurrency; normalize in normalizeChannel()
-type ChannelServer = Omit<Channel, 'base_urls' | 'custom_header' | 'keys' | 'max_concurrency'> & {
+type ChannelServer = Omit<Channel, 'base_urls' | 'custom_header' | 'keys' | 'max_concurrency' | 'retry_on_503' | 'max_503_retries'> & {
     base_urls: BaseUrl[] | null;
     custom_header: CustomHeader[] | null;
     keys: ChannelKey[] | null;
     max_concurrency: number | null;
+    retry_on_503: number | null;
+    max_503_retries: number | null;
 };
 
 /**
@@ -87,6 +92,8 @@ export function normalizeChannel(raw: ChannelServer): Channel {
     return {
         ...raw,
         max_concurrency: normalizeChannelMaxConcurrency(raw.max_concurrency),
+        retry_on_503: raw.retry_on_503 === 1 ? 1 : 0,
+        max_503_retries: normalizeChannelMax503Retries(raw.max_503_retries),
         base_urls: raw.base_urls ?? [],
         custom_header: raw.custom_header ?? [],
         keys: raw.keys ?? [],
@@ -112,6 +119,8 @@ export type CreateChannelRequest = {
     param_override?: string | null;
     match_regex?: string | null;
     max_concurrency?: number;
+    retry_on_503?: number;
+    max_503_retries?: number;
 };
 
 /**
@@ -133,6 +142,8 @@ export type UpdateChannelRequest = {
     param_override?: string | null;
     match_regex?: string | null;
     max_concurrency?: number;
+    retry_on_503?: number;
+    max_503_retries?: number;
     // keys diff
     keys_to_add?: Array<Pick<ChannelKey, 'enabled' | 'channel_key' | 'remark'>>;
     keys_to_update?: Array<{ id: number; enabled?: boolean; channel_key?: string; remark?: string }>;

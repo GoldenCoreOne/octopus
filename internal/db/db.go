@@ -121,3 +121,11 @@ func Close() error {
 func GetDB() *gorm.DB {
 	return db
 }
+
+// SwapDBForTest 原子替换全局 DB 句柄，返回旧句柄供恢复。
+// 仅供测试使用：让单测能在临时 SQLite 实例上运行，互不干扰。
+func SwapDBForTest(next *gorm.DB) *gorm.DB {
+	prev := db
+	db = next
+	return prev
+}

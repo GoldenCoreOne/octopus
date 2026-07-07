@@ -28,6 +28,7 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/common/Toast';
 import { getChannelConcurrencyMode, resolveChannelMaxConcurrency } from '@/lib/channel-concurrency';
+import { getChannelRetryOn503, resolveChannelMax503Retries, resolveChannelRetryOn503 } from '@/lib/channel-retry-503';
 
 export function CardContent({ channel, stats }: { channel: Channel; stats: StatsMetricsFormatted }) {
     const { setIsOpen } = useMorphingDialog();
@@ -62,6 +63,8 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
         match_regex: channel.match_regex ?? '',
         concurrency_mode: getChannelConcurrencyMode(channel.max_concurrency),
         max_concurrency: channel.max_concurrency > 0 ? String(channel.max_concurrency) : '',
+        retry_on_503: getChannelRetryOn503(channel.retry_on_503),
+        max_503_retries: channel.max_503_retries > 0 ? String(channel.max_503_retries) : '',
     });
     const t = useTranslations('channel.detail');
 
@@ -130,6 +133,27 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
         const curMaxConcurrency = channel.max_concurrency ?? 0;
         if (resolvedConcurrency.value !== curMaxConcurrency) {
             req.max_concurrency = resolvedConcurrency.value;
+        }
+
+        // 503 自动重试：开关 + 次数均参与差量比对。开关变化即发送；次数仅在开关开启且与现值不同时发送。
+        const nextRetryOn503 = resolveChannelRetryOn503(formData.retry_on_503);
+        const curRetryOn503 = channel.retry_on_503 === 1 ? 1 : 0;
+        if (nextRetryOn503 !== curRetryOn503) {
+            req.retry_on_503 = nextRetryOn503;
+        }
+
+        const resolvedMax503 = resolveChannelMax503Retries(formData.retry_on_503, formData.max_503_retries);
+        if (!resolvedMax503.ok) {
+            toast.error(t('max503RetriesValidationTitle'), {
+                description: t(`retryErrors.${resolvedMax503.code}`),
+            });
+            return;
+        }
+        if (formData.retry_on_503 && resolvedMax503.value !== undefined) {
+            const curMax503 = channel.max_503_retries ?? 0;
+            if (resolvedMax503.value !== curMax503) {
+                req.max_503_retries = resolvedMax503.value;
+            }
         }
 
         const originalKeys = channel.keys;
@@ -473,6 +497,51 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
                                             <div>
                                                 <dt className="text-xs text-muted-foreground">{t('concurrency.behaviorLabel')}</dt>
                                                 <dd className="text-sm font-medium text-card-foreground">{t('concurrency.behaviorValue')}</dd>
+                                            </div>
+                                        </dl>
+                                    </div>
+                                </section>
+
+                                {/* 503 自动重试 */}
+                                <section className="space-y-3">
+                                    <h4 className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                                        <Activity className="size-3.5" />
+                                        {t('retry503.title')}
+                                    </h4>
+                                    <div className="rounded-2xl border bg-card p-3 sm:p-4 space-y-2">
+                                        {channel.retry_on_503 === 1 ? (
+                                            <>
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-sm text-muted-foreground">{t('retry503.enabled')}</span>
+                                                    <Badge variant="secondary" className="h-5 px-1.5 text-xs">{t('retry503.enabledBadge')}</Badge>
+                                                </div>
+                                                <p className="text-xs text-muted-foreground">
+                                                    {channel.max_503_retries > 0
+                                                        ? t('retry503.limitedDescription', { count: channel.max_503_retries })
+                                                        : t('retry503.unlimitedDescription')}
+                                                </p>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-sm text-muted-foreground">{t('retry503.disabled')}</span>
+                                                    <Badge variant="secondary" className="h-5 px-1.5 text-xs">{t('retry503.disabledBadge')}</Badge>
+                                                </div>
+                                                <p className="text-xs text-muted-foreground">{t('retry503.disabledDescription')}</p>
+                                            </>
+                                        )}
+                                        <dl className="grid gap-2 grid-cols-1 sm:grid-cols-3 pt-2 border-t">
+                                            <div>
+                                                <dt className="text-xs text-muted-foreground">{t('retry503.scopeLabel')}</dt>
+                                                <dd className="text-sm font-medium text-card-foreground">{t('retry503.scopeValue')}</dd>
+                                            </div>
+                                            <div>
+                                                <dt className="text-xs text-muted-foreground">{t('retry503.strategyLabel')}</dt>
+                                                <dd className="text-sm font-medium text-card-foreground">{t('retry503.strategyValue')}</dd>
+                                            </div>
+                                            <div>
+                                                <dt className="text-xs text-muted-foreground">{t('retry503.circuitLabel')}</dt>
+                                                <dd className="text-sm font-medium text-card-foreground">{t('retry503.circuitValue')}</dd>
                                             </div>
                                         </dl>
                                     </div>

@@ -516,6 +516,22 @@
                 "instanceValue": "進行中的請求",
                 "behaviorLabel": "阻塞行為",
                 "behaviorValue": "超出時排隊等待"
+            },
+            "retry503": {
+                "title": "503 自動重試",
+                "enabled": "已開啟",
+                "enabledBadge": "開",
+                "limitedDescription": "最多重試 {count} 次後才會向用戶端回傳 503",
+                "unlimitedDescription": "無限重試，直到回傳非 503 回應或請求逾時",
+                "disabled": "未開啟",
+                "disabledBadge": "關",
+                "disabledDescription": "上游 503 將立即回傳給用戶端",
+                "scopeLabel": "作用域",
+                "scopeValue": "單一供應源",
+                "strategyLabel": "策略",
+                "strategyValue": "搶佔式，零延遲",
+                "circuitLabel": "熔斷器",
+                "circuitValue": "重試期間跳過"
             }
         },
         "create": {
@@ -526,6 +542,11 @@
             "concurrencyErrors": {
                 "required": "請輸入並發限制值",
                 "positive_integer": "並發限制必須為正整數"
+            },
+            "max503RetriesValidationTitle": "503 重試次數無效",
+            "retryErrors": {
+                "required": "請輸入重試次數",
+                "non_negative_integer": "重試次數必須為非負整數"
             }
         },
         "form": {
@@ -582,6 +603,15 @@
             "concurrencyErrors": {
                 "required": "請輸入並發限制值",
                 "positive_integer": "並發限制必須為正整數"
+            },
+            "retryOn503": "503 自動重試",
+            "retryOn503Hint": "對上游 HTTP 503 透明重試",
+            "max503RetriesValue": "最大重試次數",
+            "max503RetriesPlaceholder": "0=無限；留空=預設 12",
+            "max503RetriesHint": "0=無限；留空=預設 12；>0=自訂重試上限",
+            "retryErrors": {
+                "required": "請輸入重試次數",
+                "non_negative_integer": "重試次數必須為非負整數"
             }
         }
     }

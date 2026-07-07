@@ -18,6 +18,7 @@ import {
     type ChannelConcurrencyMode,
     validateLimitedChannelConcurrencyInput,
 } from '@/lib/channel-concurrency';
+import { validateChannelMax503RetriesInput } from '@/lib/channel-retry-503';
 
 export interface ChannelKeyFormItem {
     id?: number;
@@ -46,6 +47,8 @@ export interface ChannelFormData {
     match_regex: string;
     concurrency_mode: ChannelConcurrencyMode;
     max_concurrency: string; // limited 模式下的原始输入；unlimited 模式下保持 ''
+    retry_on_503: boolean;
+    max_503_retries: string; // 原始输入；空串表示沿用后端默认(12)
 }
 
 export interface ChannelFormProps {
@@ -626,6 +629,49 @@ export function ChannelForm({
                                 );
                             })()}
                             <p className="text-xs text-muted-foreground">{t('maxConcurrencyHint')}</p>
+                        </div>
+
+                        <div className="space-y-2">
+                            <label htmlFor={`${idPrefix}-retry-503`} className="text-sm font-medium text-card-foreground">
+                                {t('retryOn503')}
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer">
+                                <Switch
+                                    id={`${idPrefix}-retry-503`}
+                                    checked={formData.retry_on_503}
+                                    onCheckedChange={(checked) => onFormDataChange({
+                                        ...formData,
+                                        retry_on_503: checked,
+                                        // 关闭时清空输入；开启时保留旧值供编辑
+                                        max_503_retries: checked ? formData.max_503_retries : '',
+                                    })}
+                                />
+                                <span className="text-sm text-muted-foreground">{t('retryOn503Hint')}</span>
+                            </label>
+                            {formData.retry_on_503 && (() => {
+                                const retryErrorCode = validateChannelMax503RetriesInput(formData.max_503_retries);
+                                return (
+                                    <>
+                                        <label htmlFor={`${idPrefix}-max-503-retries`} className="text-sm font-medium text-card-foreground">
+                                            {t('max503RetriesValue')}
+                                        </label>
+                                        <Input
+                                            id={`${idPrefix}-max-503-retries`}
+                                            type="text"
+                                            inputMode="numeric"
+                                            aria-invalid={retryErrorCode ? 'true' : 'false'}
+                                            value={formData.max_503_retries}
+                                            onChange={(e) => onFormDataChange({ ...formData, max_503_retries: e.target.value })}
+                                            placeholder={t('max503RetriesPlaceholder')}
+                                            className="rounded-xl"
+                                        />
+                                        {retryErrorCode && (
+                                            <p className="text-xs text-destructive">{t(`retryErrors.${retryErrorCode}`)}</p>
+                                        )}
+                                        <p className="text-xs text-muted-foreground">{t('max503RetriesHint')}</p>
+                                    </>
+                                );
+                            })()}
                         </div>
                     </AccordionContent>
                 </AccordionItem>
