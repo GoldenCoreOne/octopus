@@ -238,7 +238,6 @@ func (ra *relayAttempt) attempt() attemptResult {
 
 	// ====== 失败 ======
 	ra.usedKey.TotalCost += 1
-	op.ChannelKeyUpdate(ra.usedKey)
 	span.End(dbmodel.AttemptFailed, statusCode, fwdErr.Error())
 
 	// Channel 维度统计
@@ -247,12 +246,43 @@ func (ra *relayAttempt) attempt() attemptResult {
 		RequestFailed: 1,
 	})
 
-	// 熔断器：记录失败（503且开启了重试时不记录，避免重试被熔断器提前掐断）
-	// 与 forward() 重试决策保持一致：复用 shouldRetry503 的 matched 判定。
-	_, _, matchedRetry503 := shouldRetry503(statusCode, retryOn503Enabled(ra.channel), false, 0, 0)
-	if !matchedRetry503 {
+	// 熔断器/速率冷却分派：
+	// 1) 503 且开启重试 → 优先短路，不 RecordFailure（保护渠道不被熔断，v1 行为），
+	//    503 经 forward() 重试，exhaust 时也不累计——避免开启重试的渠道因反复 503 exhaust 被熔断。
+	// 2) 非 503 上游错误 → errors.As 解包 *upstreamError，按 VendorCode 分派：
+	//    - 11210 等瞬时速率错误 → RecordRateLimit（即时 60s 冷却，不触碰熔断状态机）+
+	//      设置 key.RateLimitedUntil（channel.go 层 60s 主冷却）+ 清零 StatusCode（避免 5min 429 软冷却二次遮蔽）。
+	//    - 其它/未识别 → RecordFailure（既有熔断失败路径，行为不变）。
+	// 3) 网络错误/请求构造错误（非 *upstreamError）→ RecordFailure，行为不变。
+	// 失败处置分类（纯函数决策，副作用由下方各分支绑定）：
+	//   classRetry503ShortCircuit → 503 且开启重试，不 RecordFailure（保护渠道不被熔断）；
+	//   classRecordRateLimit       → 11210 等瞬时速率错误，即时 60s 冷却（不触碰熔断状态机）；
+	//   classRecordFailure         → 未识别厂商码 / 网络错误，既有熔断失败路径。
+	class, vendorCode := classifyFailure(statusCode, fwdErr, retryOn503Enabled(ra.channel))
+	switch class {
+	case classRetry503ShortCircuit:
+		// 503 且开启重试：不 RecordFailure，保护渠道不被熔断。
+		// 503 exhaust 时 body 仍解析厂商码用于统计/日志，但不触发速率冷却或熔断。
+		if vendorCode > 0 {
+			log.Infof("channel %s 503 exhausted with vendor code %d (no circuit action)", ra.channel.Name, vendorCode)
+		}
+	case classRecordRateLimit:
+		balancer.RecordRateLimit(ra.channel.ID, ra.usedKey.ID, ra.internalRequest.Model)
+		// channel.go 层主冷却：设置 RateLimitedUntil，使 GetChannelKeyExcept 在 60s 内跳过该 key。
+		ra.usedKey.RateLimitedUntil = time.Now().Add(balancer.RateLimitCooldown)
+		// 清零 StatusCode：11210 在 :213 已设为 429，若保留会在 60s 冷却过期后
+		// 被 5min 429 软冷却二次遮蔽（LastUseTimeStamp=T0，T0+60s 时 nowSec-T0=60<300）。
+		// 清零后 429 软冷却检查 k.StatusCode==429 为 false，不再触发，60s 精确语义达成。
+		ra.usedKey.StatusCode = 0
+	case classRecordFailure:
+		// 既有熔断失败路径：未识别厂商码的上游错误、网络/构造/body 读取错误。
 		balancer.RecordFailure(ra.channel.ID, ra.usedKey.ID, ra.internalRequest.Model)
 	}
+
+	// 统一写回内存缓存：捕获本轮所有 key 变更（StatusCode/LastUseTimeStamp/TotalCost，
+	// 以及 11210 分派设置的 RateLimitedUntil + StatusCode=0）。单次写入避免中间态
+	// （StatusCode=429 但 RateLimitedUntil 未设）被并发 GetChannelKeyExcept 读到而误触 5min 软冷却。
+	op.ChannelKeyUpdate(ra.usedKey)
 
 	ra.metrics.ParamOverride = paramOverrideValue(ra.channel.ParamOverride)
 
@@ -263,7 +293,7 @@ func (ra *relayAttempt) attempt() attemptResult {
 	return attemptResult{
 		Success: false,
 		Written: written,
-		Err:     fmt.Errorf("channel %s failed: %v", ra.channel.Name, fwdErr),
+		Err:     fmt.Errorf("channel %s failed: %w", ra.channel.Name, fwdErr),
 	}
 }
 
@@ -398,11 +428,19 @@ func (ra *relayAttempt) forward() (int, error) {
 
 	// 检查响应状态
 	if lastResp.StatusCode < 200 || lastResp.StatusCode >= 300 {
-		body, err := io.ReadAll(lastResp.Body)
+		// 最多读 8KB：正常错误体（如讯飞 11210 <500B）足够，恶意大 body 不占用内存。
+		// 超出部分由 Close 处理（drain ≤256B 复用连接，超限关连接重连，与 503 close-no-drain 同结论）。
+		body, err := io.ReadAll(io.LimitReader(lastResp.Body, maxUpstreamErrorBody))
 		if err != nil {
 			return 0, fmt.Errorf("failed to read response body: %w", err)
 		}
-		return lastResp.StatusCode, fmt.Errorf("upstream error: %d: %s", lastResp.StatusCode, string(body))
+		// 返回 *upstreamError 携带厂商业务错误码，供 attempt() 用 errors.As 解包分派。
+		// Error() 字面与旧 fmt.Errorf("upstream error: %d: %s", ...) 一致，零回归。
+		return lastResp.StatusCode, &upstreamError{
+			StatusCode: lastResp.StatusCode,
+			VendorCode: parseUpstreamVendorCode(body),
+			Body:       body,
+		}
 	}
 
 	// 处理响应

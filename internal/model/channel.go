@@ -48,14 +48,19 @@ type CustomHeader struct {
 }
 
 type ChannelKey struct {
-	ID               int     `json:"id" gorm:"primaryKey"`
-	ChannelID        int     `json:"channel_id"`
-	Enabled          bool    `json:"enabled" gorm:"default:true"`
-	ChannelKey       string  `json:"channel_key"`
-	StatusCode       int     `json:"status_code"`
-	LastUseTimeStamp int64   `json:"last_use_time_stamp"`
-	TotalCost        float64 `json:"total_cost"`
-	Remark           string  `json:"remark"`
+	ID               int       `json:"id" gorm:"primaryKey"`
+	ChannelID        int       `json:"channel_id"`
+	Enabled          bool      `json:"enabled" gorm:"default:true"`
+	ChannelKey       string    `json:"channel_key"`
+	StatusCode       int       `json:"status_code"`
+	LastUseTimeStamp int64     `json:"last_use_time_stamp"`
+	TotalCost        float64   `json:"total_cost"`
+	Remark           string    `json:"remark"`
+	// RateLimitedUntil 速率限流（如讯飞 11210 tpm 超限）的即时冷却到期时间。
+	// 零值 time.Time{}（IsZero()=true）表示未处于速率冷却。
+	// 由 relay 层在识别到 11210 时设置（now + 60s），GetChannelKeyExcept 优先检查它，
+	// 使该 key 在 60s 内被跳过，等待 tpm 窗口刷新。冷却到期后 key 重新可选。
+	RateLimitedUntil time.Time `json:"rate_limited_until" gorm:"index"`
 }
 
 // ChannelUpdateRequest 渠道更新请求 - 仅包含变更的数据
@@ -140,6 +145,7 @@ func (c *Channel) GetChannelKeyExcept(excluded map[int]struct{}) ChannelKey {
 	}
 
 	nowSec := time.Now().Unix()
+	now := time.Now()
 
 	best := ChannelKey{}
 	bestCost := 0.0
@@ -153,6 +159,13 @@ func (c *Channel) GetChannelKeyExcept(excluded map[int]struct{}) ChannelKey {
 			if _, skip := excluded[k.ID]; skip {
 				continue
 			}
+		}
+		// 优先检查速率限流冷却（11210 等瞬时速率错误，60s 精确）：
+		// 未过期则跳过该 key，等待 tpm 窗口刷新；过期则放行进入后续选路判定。
+		// 此检查先于 429 软冷却（5min），确保 60s 精确语义不被 5min 软冷却遮蔽。
+		// 11210 命中时 relay 层会同时清零 StatusCode，使 60s 过期后 429 软冷却不再触发。
+		if !k.RateLimitedUntil.IsZero() && now.Before(k.RateLimitedUntil) {
+			continue
 		}
 		if k.StatusCode == 429 && k.LastUseTimeStamp > 0 {
 			if nowSec-k.LastUseTimeStamp < int64(5*time.Minute/time.Second) {

@@ -19,13 +19,24 @@ const (
 	StateHalfOpen                     // 半开，仅允许单个试探请求
 )
 
+// RateLimitCooldown 速率限流（如讯飞 11210 tpm 超限）的即时冷却时长。
+// tpm 每分钟动态刷新，官方建议"等待后重试"，60s 即覆盖一个刷新窗口。
+// 此常量同时用于熔断器层 rateLimitUntil 与 channel.go 层 RateLimitedUntil，
+// 两层冷却共用同一时长，互为冗余（见设计文档 5.3）。
+const RateLimitCooldown = 60 * time.Second
+
 // circuitEntry 单个熔断器条目
 type circuitEntry struct {
 	State               CircuitState
 	ConsecutiveFailures int64
 	LastFailureTime     time.Time
 	TripCount           int // 累计熔断触发次数（用于指数退避）
-	mu                  sync.Mutex
+	// rateLimitUntil 速率限流冷却到期时间（用于 11210 等瞬时速率错误的即时冷却）。
+	// 与 State/TripCount/ConsecutiveFailures 正交：RecordRateLimit 仅设此字段，
+	// 不触碰熔断状态机；IsTripped 优先检查它；RecordSuccess 清零。
+	// 零值 time.Time{}（IsZero()=true）表示未处于速率冷却。
+	rateLimitUntil time.Time
+	mu             sync.Mutex
 }
 
 // 全局熔断器存储
@@ -95,6 +106,17 @@ func IsTripped(channelID, keyID int, modelName string) (tripped bool, remaining 
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
 
+	// 优先检查速率限流冷却（11210 等瞬时速率错误）：
+	// 未过期 → 跳过该 key；过期 → 惰性清零，继续走熔断状态机判定。
+	// 与 State 正交：无论 Closed/Open/HalfOpen，速率冷却未过期都应跳过。
+	if !entry.rateLimitUntil.IsZero() {
+		remaining := time.Until(entry.rateLimitUntil)
+		if remaining > 0 {
+			return true, remaining
+		}
+		entry.rateLimitUntil = time.Time{}
+	}
+
 	switch entry.State {
 	case StateClosed:
 		return false, 0
@@ -139,6 +161,24 @@ func RecordSuccess(channelID, keyID int, modelName string) {
 	entry.State = StateClosed
 	entry.ConsecutiveFailures = 0
 	entry.TripCount = 0
+	// 一次成功即解除速率冷却（tpm 窗口可能已刷新，key 已恢复）
+	entry.rateLimitUntil = time.Time{}
+}
+
+// RecordRateLimit 记录一次速率限流（如讯飞 11210 tpm 超限），设置即时冷却。
+//
+// 与 RecordFailure 正交：不累加 ConsecutiveFailures、不递增 TripCount、不改变 State，
+// 仅设置 rateLimitUntil = now + RateLimitCooldown。IsTripped 会优先检查此字段跳过该 key，
+// 冷却过期后惰性清零，熔断状态机不受影响——避免瞬时速率错误误触发熔断。
+func RecordRateLimit(channelID, keyID int, modelName string) {
+	key := circuitKey(channelID, keyID, modelName)
+	entry := getOrCreateEntry(key)
+
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+
+	entry.rateLimitUntil = time.Now().Add(RateLimitCooldown)
+	log.Infof("circuit breaker [%s] rate-limited for %v (vendor 11210-style cooldown)", key, RateLimitCooldown)
 }
 
 // RecordFailure 记录失败，可能触发熔断
